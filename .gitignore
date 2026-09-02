@@ -1,0 +1,4 @@
+# Track only the hub instructions. work_repo/ and personal_repo/ are their own repos.
+*
+!CLAUDE.md
+!.gitignore

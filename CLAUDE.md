@@ -29,6 +29,7 @@ If the context is unclear, ask Mo once. Do not invent a seventh.
 
 ## Rules
 
+- **Never `cd` (HARD). The hub lives at `/Users/mtalib/workspace_repos` and stays there.** Bash working directory persists between calls, so one `cd` moves the whole session and Mo's status bar with it. Every path is absolute; every git command is `git -C /abs/repo ...`; a tool that truly needs a working directory gets a subshell `( cd /abs/dir && ... )` so nothing persists. Reading a worker's output file is `cat /abs/path`, never `cd` into its folder. Broke twice (2026-09-02 into `rebu_docs_v2`, 2026-09-13 into `goldenstone/preference`); Mo asked both times. If the status bar ever shows anything but `workspace_repos`, fix it first with `cd /Users/mtalib/workspace_repos` before doing anything else.
 - **Never steal focus.** Always `--no-focus`. Mo decides what to look at; the sidebar shows him the workers.
 - **One worker per space by default.** For two tasks in the same context at once, create a second tab in that space with `herdr tab create --workspace <id> --cwd <folder> --no-focus` and start a second agent with a unique lowercase name such as `openai_report`.
 - **Quick questions you answer yourself.** Delegation is for work that touches files, tools or takes more than a minute.

@@ -9,7 +9,8 @@ the same conversation.
 
 Usage
     python3 /Users/mtalib/workspace_repos/herdr_layout.py snapshot
-    python3 /Users/mtalib/workspace_repos/herdr_layout.py restore --dry-run
+    python3 /Users/mtalib/workspace_repos/herdr_layout.py restore
+    python3 /Users/mtalib/workspace_repos/herdr_layout.py restart --dry-run
     python3 /Users/mtalib/workspace_repos/herdr_layout.py restore
 
     restore --fresh          start every agent with a clean context (no --resume)
@@ -25,6 +26,11 @@ agent's session. A workspace with more than one tab gets a `tab create` per extr
 tab, each with its own agent. Everything runs with --no-focus so your focus does
 not jump around, and with --permission-mode bypassPermissions, which is how these
 workers already run.
+
+`restart` is the lighter option and the one to reach for after a Claude Code
+update: it leaves every workspace, tab and pane exactly where it is and only
+replaces the agent processes, resuming each session. `restore` is for after the
+Herdr server itself has been stopped and the panes are gone.
 
 Restore is additive. It never closes anything. Run it against a fresh Herdr, or
 pass --only to bring back the few that died.
@@ -200,6 +206,73 @@ def restore(data: dict, fresh: bool, dry: bool, only: set, include_hub: bool) ->
           + ("  (dry run, nothing was created)" if dry else ""))
 
 
+def live_agents():
+    """Current agents from the server, which is truer than the snapshot."""
+    res = herdr("agent", "list")
+    return res["agents"] if res else []
+
+
+def restart_one(a: dict, fresh: bool, dry: bool) -> bool:
+    """Quit the agent in its pane and start it again in the same pane.
+
+    Layout is untouched: same workspace, same tab, same pane. Only the agent
+    process is replaced, which is what picks up a Claude Code update. The name
+    is cleared when the old process exits, so it is free to reuse.
+    """
+    name, pane = a["name"], a["pane_id"]
+    session = (a.get("agent_session") or {}).get("value")
+    kind = a["agent"]
+
+    if dry:
+        print(f"    herdr agent send-keys {name} ctrl+c ctrl+c")
+        print(f"    herdr agent start {name} --kind {kind} --pane {pane} "
+              f"--timeout {START_TIMEOUT_MS} -- " + " ".join(AGENT_ARGS)
+              + ("" if fresh or not session else f" --resume {session}"))
+        return True
+
+    herdr("agent", "send-keys", name, "ctrl+c", check=False)
+    time.sleep(0.6)
+    herdr("agent", "send-keys", name, "ctrl+c", check=False)
+
+    # Wait for the pane to drop back to a shell prompt. The name disappears
+    # from the agent list once the old process is gone.
+    for _ in range(40):
+        time.sleep(0.5)
+        if name not in {x["name"] for x in live_agents()}:
+            break
+    else:
+        print(f"    ! {name} did not exit, left alone")
+        return False
+
+    return start_agent({"name": name, "kind": kind, "session_id": session},
+                       pane, fresh, dry)
+
+
+def restart(fresh: bool, dry: bool, only: set, include_self: bool) -> None:
+    here = os.environ.get("HERDR_PANE_ID")
+    agents = live_agents()
+    ok = failed = 0
+
+    for a in sorted(agents, key=lambda x: x["name"]):
+        if only and a["name"] not in only:
+            continue
+        if not include_self and here and a["pane_id"] == here:
+            print(f"- {a['name']}: skipped, this script is running in it. "
+                  f"Restart it from a shell outside Herdr, or with --include-self.")
+            continue
+        if a["agent_status"] == "working":
+            print(f"- {a['name']}: skipped, it is mid-turn. Re-run for it later.")
+            continue
+        print(f"- {a['name']} ({a['pane_id']})")
+        if restart_one(a, fresh, dry):
+            ok += 1
+        else:
+            failed += 1
+
+    print(f"\n{ok} restarted, {failed} failed."
+          + ("  (dry run, nothing was touched)" if dry else ""))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -217,12 +290,25 @@ def main() -> int:
     r.add_argument("--include-hub", action="store_true",
                    help="also recreate the workspace this script runs in")
 
+    x = sub.add_parser("restart", help="quit and restart agents in their existing panes")
+    x.add_argument("--fresh", action="store_true",
+                   help="start with a clean context instead of --resume")
+    x.add_argument("--dry-run", action="store_true", help="print commands only")
+    x.add_argument("--only", default="", help="comma separated agent names")
+    x.add_argument("--include-self", action="store_true",
+                   help="also restart the agent running this script")
+
     a = ap.parse_args()
 
     if a.cmd == "snapshot":
         data = snapshot(a.out)
         describe(data)
         print(f"\nwrote {a.out}")
+        return 0
+
+    if a.cmd == "restart":
+        restart(a.fresh, a.dry_run,
+                {x.strip() for x in a.only.split(",") if x.strip()}, a.include_self)
         return 0
 
     if not a.file.is_file():

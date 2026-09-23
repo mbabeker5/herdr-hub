@@ -24,7 +24,7 @@ What restore does per workspace: `workspace create` with the original label and
 working directory, then `agent start` in the returned root pane, resuming that
 agent's session. A workspace with more than one tab gets a `tab create` per extra
 tab, each with its own agent. Everything runs with --no-focus so your focus does
-not jump around, and with --permission-mode bypassPermissions, which is how these
+not jump around, and with --permission-mode bypassPermissions and --model opus, which is how these
 workers already run.
 
 `restart` is the lighter option and the one to reach for after a Claude Code
@@ -46,7 +46,10 @@ from pathlib import Path
 
 DEFAULT_FILE = Path.home() / ".config" / "herdr" / "layout.json"
 START_TIMEOUT_MS = 90000
-AGENT_ARGS = ["--permission-mode", "bypassPermissions"]
+# Workers are pinned to Opus. A sub-agent inherits its parent's model unless the
+# Agent call sets one, and there is no settings.json key for a default sub-agent
+# model, so a worker left on a smaller model quietly spawns smaller sub-agents.
+AGENT_ARGS = ["--permission-mode", "bypassPermissions", "--model", "opus"]
 
 
 def herdr(*args, check=True):

@@ -89,7 +89,8 @@ def snapshot(path: Path) -> dict:
                     "pane_id": p["pane_id"],
                     "cwd": p.get("cwd"),
                     "agent": None if not a else {
-                        "name": a["name"],
+                        # agents started by hand in a pane have no name; derive one from the pane
+                        "name": a.get("name") or "pane_" + p["pane_id"].lower().replace(":", "_"),
                         "kind": a["agent"],
                         "session_id": (a.get("agent_session") or {}).get("value"),
                         "cwd": a.get("cwd"),
